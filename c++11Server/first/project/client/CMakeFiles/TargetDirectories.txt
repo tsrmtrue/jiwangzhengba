@@ -1,0 +1,3 @@
+/home/tsrmtrue/jiwangzhengba/c++11Server/first/project/client/CMakeFiles/edit_cache.dir
+/home/tsrmtrue/jiwangzhengba/c++11Server/first/project/client/CMakeFiles/rebuild_cache.dir
+/home/tsrmtrue/jiwangzhengba/c++11Server/first/project/client/CMakeFiles/gate_client.dir

@@ -1,0 +1,330 @@
+﻿#include "logic/networkMsg.h"
+#include "logic/server.h"
+//#include "logic/sceneThread.h"
+#include "protocols/protocolCoding4cpp.h"
+#include "logic/networkMsg.h"
+#ifdef WIN32
+#else
+#include <string.h>	
+#endif
+
+#define EASYSEND(id, MESSAGE, st, client) bool sendResult = false;\
+	{\
+		unsigned char __b[512];\
+		SProtocolHead __head = {0, id, m_send_tick++};\
+		int __index = 0;\
+		__index = encode_SProtocolHead(__head, __b+__index, 512); \
+		if (__index >= 0)  \
+		{\
+			__index = encode_##MESSAGE(st, __b+__index, 512); \
+			if (__index >= 0) \
+			{\
+				__head.totalLength = sizeof(SProtocolHead) + __index;\
+				__index = encode_SProtocolHead(__head, __b, 512); \
+				if (__index >= 0)\
+				{\
+					client->doSend(__b, __head.totalLength);\
+					sendResult = true;\
+				}\
+				else\
+				{\
+					std::cout<<" 1 "<<std::endl;\
+				}\
+			}\
+			else\
+			{\
+				std::cout<<" 2 "<<std::endl;\
+			}\
+		}\
+		else\
+		{\
+			std::cout<<" 3 "<<std::endl;\
+		}\
+	}
+
+
+void CRougelikePeer::setMother(CNetworkThread*p)
+{
+	m_pMother = p;
+}
+
+bool CRougelikePeer::afterRecv()
+{
+	int totalRead = 0;
+
+	while (m_nRecvIndex >= sizeof(SProtocolHead))
+	{
+		SProtocolHead head = { 0,0 };
+		int index = decode_SProtocolHead(head, m_buff + totalRead, m_nRecvIndex);
+		if ( index > 0 && head.totalLength <= m_nRecvIndex)
+		{
+			//std::cout << "handle message " << m_tick ++ <<std::endl;
+			switch( head.protocolId)
+			{
+				case C_2_S_Protocol_Type_Rpt:
+				{
+					SProtocolTypeRpt rpt = { 0 };
+					index = decode_SProtocolTypeRpt(rpt, m_buff + index , m_nRecvIndex - index);
+					if (index > 0)
+					{
+						std::cout << "recv protocol type rpt " << rpt.type << std::endl;
+						//SProtocolTypeRsp rsp = {0};
+						//sprintf(rsp.rsp, "Ptype %d", rpt.type);
+						//EASYSEND(S_2_C_Protocol_Type_Rsp, SProtocolTypeRsp, rsp);
+					}
+				}break;
+				case C_2_S_Objects_Action_Ask:
+				{
+					printTimeElapse("action ask ");
+					SObjectsActionAsk ask = { 0 };
+					index = decode_SObjectsActionAsk(ask, m_buff + index, m_nRecvIndex - index);
+					if (index > 0)
+					{
+						if (ask.oas.a[0].action == E_ObjectAction_Move_Start
+							|| ask.oas.a[0].action == E_ObjectAction_Move_Stop)
+						{
+							m_lastAction = ask.oas.a[0];
+						}
+						SObjectsActionRsp rsp = { 0 };
+						rsp.oas = ask.oas;
+						MAP_SOCKET_2_PEER mapS2P = m_pMother->getAllPeer();
+						for (auto iter = mapS2P.begin(); iter != mapS2P.end(); ++iter)
+						{
+							///动作消息，要广播给全世界
+							CRougelikePeer * peer = (CRougelikePeer*)(iter->second);
+							{
+								EASYSEND(S_2_C_Objects_Action_Rsp, SObjectsActionRsp, rsp, peer);
+							}
+							//if (ask.oas.a[0].action == E_ObjectAction_Move_Stop)
+							//{
+							//	//std::cout << "end the move" << getSocket() << std::endl;
+							//	//int i = 0;
+							//}
+							//else if (ask.oas.a[0].action == E_ObjectAction_UseSkill)
+							//{
+							//	//std::cout << "use skill" << getSocket() << std::endl;
+							//	//int i = 0;
+							//}
+
+						}
+					}
+				}break;
+				case C_2_S_Test_Network_Ask:
+				{
+					//返回消息
+					STestNetworkAsk ask = { 0 };
+					index = decode_STestNetworkAsk(ask, m_buff + index, m_nRecvIndex - index);
+					if (index > 0)
+					{
+						STestNetworkRsp rsp = {0};
+						rsp.rsp = ask.ask;
+						//sprintf(rsp.rsp, "Ptype %d", rpt.type);
+						EASYSEND(S_2_C_Test_Network_Rsp, STestNetworkRsp, rsp,this);
+					}
+					m_testNetwork_Recv += head.totalLength;
+					
+					double d = duration_cast<duration<double>>(high_resolution_clock::now() - m_testNetwork_timestamp).count();
+					if (d > 10)
+					{
+						// std::cout << "10 seconds recv " << m_testNetwork_Recv << std::endl;
+						m_testNetwork_Recv = 0;
+						m_testNetwork_timestamp = high_resolution_clock::now();
+					}
+
+				}break;
+				default:
+					break;
+			}
+			totalRead += head.totalLength;
+
+			//清理数据
+			m_nRecvIndex -= head.totalLength;
+		}
+		else
+		{
+			break;
+		}
+	}
+	if (totalRead > 0)
+	{
+		memmove(m_buff, m_buff + totalRead, m_nRecvIndex);
+	}
+
+	return true;
+}
+
+void CRougelikePeer::onConnected()
+{
+
+	m_pMother->addNewPeer(this);
+
+	m_tick = 0;
+	m_send_tick = 0;
+	m_start = high_resolution_clock::now();
+
+	m_testNetwork_Recv = 0;
+	m_testNetwork_timestamp = high_resolution_clock::now();
+
+	{
+		SProtocolVersionNtf ntf = { 0x8978 };
+		EASYSEND(S_2_C_Protocol_Version_Ntf, SProtocolVersionNtf, ntf, this);
+
+	}
+
+	// {
+	// 	SObjectAction a = { 0 };
+	// 	a.action = E_ObjectAction_Enter;
+	// 	a.objID = getSocket();
+	// 	a.minfo.pos_x = 1;
+	// 	a.minfo.pos_y = -1;
+	// 	m_lastAction = a;
+	// 	SObjectsActionRsp rsp = { 0 };
+	// 	rsp.oas.count = 1;
+	// 	rsp.oas.a[0] = a;
+
+	// 	EASYSEND(S_2_C_Objects_Action_Rsp, SObjectsActionRsp, rsp, this);
+
+	// 	MAP_SOCKET_2_PEER mapS2P = m_pMother->getAllPeer();
+	// 	for (auto iter = mapS2P.begin(); iter != mapS2P.end(); ++iter)
+	// 	{
+	// 		///创建自己，要广播给全世界
+	// 		CRougelikePeer * peer = (CRougelikePeer*)(iter->second);
+	// 		if (getSocket() != peer->getSocket())
+	// 		{
+	// 			{
+	// 				//把别人的信息发送给自己
+	// 				rsp.oas.a[0].objID = getSocket();
+	// 				EASYSEND(S_2_C_Objects_Action_Rsp, SObjectsActionRsp, rsp, peer);
+	// 			}
+	// 			{
+	// 				//别人的创建消息发给我
+	// 				SObjectAction a = peer->m_lastAction;
+	// 				a.action = E_ObjectAction_Enter;
+	// 				rsp.oas.a[0] = a;
+	// 				EASYSEND(S_2_C_Objects_Action_Rsp, SObjectsActionRsp, rsp, this);
+	// 			}
+	// 		}
+	// 	}
+	// }
+}
+
+void CRougelikePeer::onClose()
+{
+	leaveScene();
+	BASECLASS::onClose();
+	m_pMother->removePeer(this);
+}
+
+void CRougelikePeer::leaveScene()
+{
+	SObjectAction a = { 0 };
+	a.action = E_ObjectAction_Leave;
+	a.objID = getSocket();
+	SObjectsActionRsp rsp = { 0 };
+	rsp.oas.count = 1;
+	rsp.oas.a[0] = a;
+
+	MAP_SOCKET_2_PEER mapS2P = m_pMother->getAllPeer();
+	for (auto iter = mapS2P.begin(); iter != mapS2P.end(); ++iter)
+	{
+		///离开场景，要广播给全世界
+		CRougelikePeer * peer = (CRougelikePeer*)(iter->second);
+		{
+			if (getSocket() != peer->getSocket())
+			{
+				EASYSEND(S_2_C_Objects_Action_Rsp, SObjectsActionRsp, rsp, peer);
+			}
+		}
+	}
+}
+
+bool CRougelikeTestClient::afterRecv() 
+{
+	int totalRead = 0;
+	while (m_nRecvIndex >= sizeof(SProtocolHead))
+	{
+		SProtocolHead head = { 0,0 };
+		int index = decode_SProtocolHead(head, m_buff+totalRead, m_nRecvIndex);
+		if (index > 0 && head.totalLength <= m_nRecvIndex)
+		{
+			//std::cout << "handle message " << m_tick ++ <<std::endl;
+			switch (head.protocolId)
+			{
+				case S_2_C_Test_Network_Rsp:
+				{
+					//返回消息
+					// STestNetworkRsp rsp = { 0 };
+					// index = decode_STestNetworkRsp(rsp, m_buff + index, m_nRecvIndex - index);
+					// if (index > 0)
+					// {
+					// 	STestNetworkAsk Ask = { 0 };
+					// 	Ask.ask = rsp.rsp;
+					// 	Ask.ask.idx++;
+					// 	//sprintf(rsp.rsp, "Ptype %d", rpt.type);
+					// 	EASYSEND(C_2_S_Test_Network_Ask, STestNetworkAsk, Ask, this);
+					// }
+				}break;
+				default:
+					break;
+			}
+			//std::cout << " total read "  << totalRead  << std::endl;
+			totalRead += head.totalLength;
+			if (totalRead < 0)
+			{
+				int i = 0;
+			}
+			//清理数据
+			m_nRecvIndex -= head.totalLength;
+		}
+		else
+		{
+			break;
+		}
+	}
+	if (totalRead > 0)
+	{
+		memmove(m_buff, m_buff + totalRead, m_nRecvIndex);
+		//std::cout << "memmove buff size " << totalRead << " index " << m_nRecvIndex << std::endl;
+	}
+	return true;
+}
+
+void  CRougelikeTestClient::doTest()
+{
+	{
+		STestNetworkAsk ask = { 0 };
+		ask.ask.idx = 1;
+		EASYSEND(C_2_S_Test_Network_Ask, STestNetworkAsk, ask, this);
+		if (sendResult)
+		{
+			m_testNetwork_Send += 1;
+
+		}
+
+		double d = duration_cast<duration<double>>(high_resolution_clock::now() - m_testNetwork_timestamp).count();
+		if (d > 10)
+		{
+			std::cout << "10 seconds send " << m_testNetwork_Send << std::endl;
+			m_testNetwork_Send = 0;
+			m_testNetwork_timestamp = high_resolution_clock::now();
+		}
+
+
+	}
+}
+
+void CRougelikeTestClient::onConnected() 
+{
+	m_pMother->addNewPeer(this);
+	m_testNetwork_Send = 0;
+	m_testNetwork_timestamp = high_resolution_clock::now();
+	m_send_tick = 0;
+	doTest();
+}
+void CRougelikeTestClient::onClose() 
+{
+	BASECLASS::onClose();
+	m_pMother->removePeer(this);
+}
+
+

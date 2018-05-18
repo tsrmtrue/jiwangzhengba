@@ -1,0 +1,103 @@
+/*------------- main.cpp
+* Copyright (C): 2011  Mokylin·Mokyqi
+* Author       : 赵文源
+* Version      : V1.01
+* Date         : 2011/2/14 14:27:27
+*
+*/
+/***************************************************************
+* 定义控制台应用程序的入口点
+***************************************************************/
+//#include "basic/basicFunctions.h"
+//#include "basic/systemFunction.h"
+//
+//#include "main/gameServer.h"
+//#include "gameLogic/sceneObject/aiRegister.h"
+#include "logic/server.h"
+#ifdef WIN32
+#include <windows.h>
+#include <winsock2.h>
+#pragma comment(lib, "ws2_32.lib")
+#endif
+#include "protocols/protocols.h"
+#include "protocols/protocolCoding4cpp.h"
+//****************************************************************
+
+void testProtocol()
+{
+	SBasicRoleInfo s = { 0 };
+	s.userid = 0x8888;
+	s.guid = 2;
+	s.showLevel = 3;
+	s.mateid = 4;
+	sprintf(s.macAddress, "323");
+	sprintf(s.rolename, "dsd");
+	s.level = 3;
+	s.professionId = 22;
+	s.exp = 3;
+	s.popularity = 8;
+	s.expTotal = 2;
+	s.diamond[0] = 3;
+	s.diamond[1] = 53;
+	s.money = 4;
+	s.exploit = 5;
+	s.vigor = 666;
+	s.vigorMax = 4444;
+	s.leaderForce = 333;
+	s.killingValue = 33434;
+	s.halliconId = 3;
+	s.te = 0x1fff;
+	s.tes = 0xf34f;
+	s.c = 0x72;
+	s.uc = 0xff;
+	s.f = 0.23f;
+	s.ll = 0x1234567844223221;
+	s.ull = 0xf23e567a442a3b21;
+
+	SEnterRoomByIDRsp rsp = { 0 };
+	rsp.i = 1;
+	rsp.f = 0.399f;
+	rsp.s[0] = s;
+
+	unsigned char  buff[256] = { 0 };
+	int size = encode_SEnterRoomByIDRsp(rsp, buff, 256);
+
+	SEnterRoomByIDRsp t = { 0 };
+	decode_SEnterRoomByIDRsp(t, buff, size);
+
+	int i = t.s[0].c;
+}
+
+int main(int argc, char* argv[])
+{
+
+	testProtocol();
+
+#ifdef WIN32
+	WORD wVersionRequested;
+	WSADATA wsaData;
+	int err;
+
+	/* Use the MAKEWORD(lowbyte, highbyte) macro declared in Windef.h */
+	wVersionRequested = MAKEWORD(2, 2);
+
+	err = WSAStartup(wVersionRequested, &wsaData);
+	if (err != 0) {
+		/* Tell the user that we could not find a usable */
+		/* Winsock DLL.                                  */
+		printf("WSAStartup failed with error: %d\n", err);
+		return 1;
+	}
+#endif // WIN32
+
+	if (g_pTestClient
+		&& g_pTestClient->setTimeElapse(0, 10000)
+		&& g_pTestClient->initThread()
+		&& g_pTestClient->start()
+		)
+	{
+		g_pTestClient->wait();
+	}
+
+	return 0;
+}

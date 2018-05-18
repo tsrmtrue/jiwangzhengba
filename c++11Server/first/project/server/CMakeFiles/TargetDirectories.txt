@@ -1,0 +1,3 @@
+/home/tsrmtrue/jiwangzhengba/c++11Server/first/project/server/CMakeFiles/rebuild_cache.dir
+/home/tsrmtrue/jiwangzhengba/c++11Server/first/project/server/CMakeFiles/edit_cache.dir
+/home/tsrmtrue/jiwangzhengba/c++11Server/first/project/server/CMakeFiles/map_server.dir
